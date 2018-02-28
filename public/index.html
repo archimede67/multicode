@@ -1,0 +1,187 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Socket.IO chat</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { font: 13px Helvetica, Arial; }
+      form { background: #000; padding: 3px; position: fixed; bottom: 0; width: 100%; }
+      form input { border: 0; padding: 10px; width: 90%; margin-right: .5%; }
+      form button { width: 9%; background: rgb(130, 224, 255); border: none; padding: 10px; }
+      #messages { list-style-type: none; margin: 0; padding: 0; }
+      #messages li { padding: 5px 10px; }
+      #messages li:nth-child(odd) { background: #eee; }
+    </style>
+    <style type="text/css" media="screen">
+        #editor { 
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
+        }
+        .MyCursorClass {
+            position: absolute;
+            border-left: 2px solid gold;
+        }
+    </style>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+
+<ul class="pages">
+    <li class="code page">
+      <div class="codeArea">
+        <ul class="ide">
+          <div id="editor">function foo(items) {
+              var x = "All this is syntax highlighted";
+              return x;
+          }</div>
+
+        </ul>
+      </div>
+    </li>
+    <li class="login page">
+      <div class="form">
+        <h3 class="title">What's your nickname?</h3>
+        <input class="usernameInput" type="text" maxlength="14" />
+      </div>
+    </li>
+  </ul>
+
+    
+    <script src="/ace-builds/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
+    <script>
+        var editor = ace.edit("editor");
+        editor.setTheme("ace/theme/monokai");
+        editor.session.setMode("ace/mode/javascript");
+    </script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://code.jquery.com/jquery-1.11.1.js"></script>
+    <script>
+      $(function () {
+        var socket = io();
+        var $editor = $('#editor');
+
+        var $window = $(window);
+
+        var $usernameInput = $('.usernameInput'); // Input for username
+        var $loginPage = $('.login.page'); // The login page
+        var $codePage = $('.code.page'); // The login page
+
+        var $currentInput = $usernameInput.focus();
+
+        var username;
+        var connected = false;
+
+        // Sets the client's username
+        function setUsername () {
+          username = cleanInput($usernameInput.val().trim());
+
+          // If the username is valid
+          if (username) {
+            $loginPage.fadeOut();
+            $codePage.show();
+            $loginPage.off('click');
+
+            // Tell the server your username
+            socket.emit('add user', username);
+          }
+        }
+
+        var marker = {}
+        marker.cursors = [{row: 0, column: 0}]
+        marker.update = function(html, markerLayer, session, config) {
+            var start = config.firstRow, end = config.lastRow;
+            var cursors = this.cursors
+            for (var i = 0; i < cursors.length; i++) {
+                var pos = this.cursors[i];
+                if (pos.row < start) {
+                    continue;
+                } else if (pos.row > end) {
+                    break;
+                } else {
+                    // compute cursor position on screen
+                    // this code is based on ace/layer/marker.js
+                    var screenPos = session.documentToScreenPosition(pos)
+
+                    var height = config.lineHeight;
+                    var width = config.characterWidth;
+                    var top = markerLayer.$getTop(screenPos.row, config);
+                    var left = markerLayer.$padding + screenPos.column * width;
+                    // can add any html here
+                    html.push(
+                        "<div class='MyCursorClass' style='",
+                        "height:", height, "px;",
+                        "top:", top, "px;",
+                        "left:", left, "px; width:", width, "px'></div>"
+                    );
+                }
+            }
+        }
+        marker.redraw = function() {
+           this.session._signal("changeFrontMarker");
+        }
+        marker.addCursor = function() {
+            // add to this cursors
+            
+            // trigger redraw
+            marker.redraw()
+        }
+        marker.session = editor.session;
+        marker.session.addDynamicMarker(marker, true)
+        // call marker.session.removeMarker(marker.id) to remove it
+        // call marker.redraw after changing one of cursors
+
+        $editor.keyup(function(e) {
+          socket.emit('chat message', {
+              text: editor.getSession().getValue(),
+              cursor: editor.selection.getCursor(),
+              user: username
+          });
+        });
+
+        // Prevents input from having injected markup
+          function cleanInput (input) {
+            return $('<div/>').text(input).html();
+          }
+
+        // Keyboard events
+
+        $window.keydown(function (event) {
+          // Auto-focus the current input when a key is typed
+          if (!(event.ctrlKey || event.metaKey || event.altKey)) {
+            $currentInput.focus();
+          }
+          // When the client hits ENTER on their keyboard
+          if (event.which === 13) {
+            if (!username) {
+              setUsername();
+            }
+          }
+        });
+
+        socket.on('chat message', function(data) {
+          //$('#messages').append($('<li>').text(msg));
+          //editor.setValue(msg);
+          
+          var same = data.user == username;
+          //alert(same);
+          if(!same) {
+            marker.cursors = [{row: data.cursor.row, column: data.cursor.column}]
+            marker.redraw();
+          }
+
+          var oldRow = editor.selection.getCursor().row;
+          var oldCol = editor.selection.getCursor().column;
+
+          editor.setValue(data.text);
+          editor.clearSelection();
+
+          editor.moveCursorTo(oldRow, oldCol);
+          //alert(msg);
+        });
+      });
+    </script>
+  </body>
+</html>
